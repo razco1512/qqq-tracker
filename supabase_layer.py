@@ -48,8 +48,8 @@ def get_supabase_client():
     """
     try:
         from supabase import create_client  # type: ignore
-        url: str = st.secrets["supabase"]["url"]
-        key: str = st.secrets["supabase"]["key"]
+        url: str = st.secrets["SUPABASE_URL"]
+        key: str = st.secrets["SUPABASE_KEY"]
         if not url or not key or url.startswith("https://<"):
             return None
         return create_client(url, key)

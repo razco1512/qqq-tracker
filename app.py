@@ -302,7 +302,7 @@ def render_sidebar() -> str:
         label = st.radio(
             label="Select chart timeframe",
             options=list(TIMEFRAME_OPTIONS.keys()),
-            index=0,
+            index=2,              # default: 1 Month
             label_visibility="collapsed",
         )
 
