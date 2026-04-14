@@ -77,6 +77,7 @@ CHART_COLORS = {
     "tqqq":     "#FF6B35",   # orange
     "ath":      "#FFD700",   # gold
     "target":   "#FF4B6E",   # rose-red
+    "manual":   "#39D353",   # green  (manual target lines)
     "fill":     "rgba(0, 212, 255, 0.06)",
 }
 
@@ -168,8 +169,9 @@ def build_qqq_chart(
     df: pd.DataFrame,
     ath: float,
     target: float,
+    manual_target: float = 0.0,
 ) -> go.Figure:
-    """Interactive QQQ line chart with ATH and −10 % reference lines."""
+    """Interactive QQQ line chart with ATH, −10 % reference lines, and optional manual target."""
     fig = go.Figure()
 
     # Area fill below the line
@@ -205,12 +207,29 @@ def build_qqq_chart(
         hovertemplate=f"−10% target: ${target:,.2f}<extra></extra>",
     ))
 
-    fig.update_layout(**_base_layout("QQQ — Nasdaq 100 ETF"))
+    # Optional manual target line
+    if manual_target > 0:
+        fig.add_trace(go.Scatter(
+            x=x_range,
+            y=[manual_target, manual_target],
+            mode="lines",
+            line=dict(color=CHART_COLORS["manual"], width=1.5, dash="dot"),
+            name=f"Manual Target  ${manual_target:,.2f}",
+            hovertemplate=f"Manual target: ${manual_target:,.2f}<extra></extra>",
+        ))
+
+    # Tight Y-axis: pad 2% around the period's price range
+    y_min = float(df["Close"].min())
+    y_max = float(df["Close"].max())
+    layout = _base_layout("QQQ — Nasdaq 100 ETF")
+    layout["yaxis"]["range"] = [y_min * 0.98, y_max * 1.02]
+
+    fig.update_layout(**layout)
     return fig
 
 
-def build_tqqq_chart(df: pd.DataFrame) -> go.Figure:
-    """Interactive TQQQ line chart."""
+def build_tqqq_chart(df: pd.DataFrame, manual_target: float = 0.0) -> go.Figure:
+    """Interactive TQQQ line chart with optional manual target line."""
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(
@@ -223,7 +242,25 @@ def build_tqqq_chart(df: pd.DataFrame) -> go.Figure:
         hovertemplate="<b>TQQQ</b><br>%{x|%b %d, %Y}<br>$%{y:,.2f}<extra></extra>",
     ))
 
-    fig.update_layout(**_base_layout("TQQQ — 3× Leveraged Nasdaq 100 ETF"))
+    # Optional manual target line
+    if manual_target > 0:
+        x_range = [df.index[0], df.index[-1]]
+        fig.add_trace(go.Scatter(
+            x=x_range,
+            y=[manual_target, manual_target],
+            mode="lines",
+            line=dict(color=CHART_COLORS["manual"], width=1.5, dash="dot"),
+            name=f"Manual Target  ${manual_target:,.2f}",
+            hovertemplate=f"Manual target: ${manual_target:,.2f}<extra></extra>",
+        ))
+
+    # Tight Y-axis: pad 2% around the period's price range
+    y_min = float(df["Close"].min())
+    y_max = float(df["Close"].max())
+    layout = _base_layout("TQQQ — 3× Leveraged Nasdaq 100 ETF")
+    layout["yaxis"]["range"] = [y_min * 0.98, y_max * 1.02]
+
+    fig.update_layout(**layout)
     return fig
 
 
@@ -241,8 +278,27 @@ def render_sidebar() -> str:
         label = st.radio(
             label="Select chart timeframe",
             options=list(TIMEFRAME_OPTIONS.keys()),
-            index=3,              # default: 1 Year
+            index=0,              # default: 1 Month
             label_visibility="collapsed",
+        )
+
+        st.divider()
+        st.markdown("#### Manual Targets")
+        qqq_manual = st.number_input(
+            label="Manual QQQ Target ($)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            format="%.2f",
+            help="Draw a custom price target line on the QQQ chart. Leave at 0 to hide.",
+        )
+        tqqq_manual = st.number_input(
+            label="Manual TQQQ Target ($)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            format="%.2f",
+            help="Draw a custom price target line on the TQQQ chart. Leave at 0 to hide.",
         )
 
         st.divider()
@@ -252,7 +308,7 @@ def render_sidebar() -> str:
             unsafe_allow_html=True,
         )
 
-    return TIMEFRAME_OPTIONS[label]
+    return TIMEFRAME_OPTIONS[label], qqq_manual, tqqq_manual
 
 
 # ─────────────────────────────────────────────
@@ -328,8 +384,8 @@ def main() -> None:
     )
     st.divider()
 
-    # ── Sidebar (timeframe selector) ──────────
-    period = render_sidebar()
+    # ── Sidebar (timeframe selector + manual targets) ──
+    period, qqq_manual, tqqq_manual = render_sidebar()
 
     # ── Data fetching (all errors surface here) ──
     with st.spinner("Fetching market data…"):
@@ -350,8 +406,8 @@ def main() -> None:
     # ── Charts ────────────────────────────────
     st.markdown('<p class="section-header">Price Charts</p>', unsafe_allow_html=True)
 
-    qqq_chart  = build_qqq_chart(df_qqq, ath, target)
-    tqqq_chart = build_tqqq_chart(df_tqqq)
+    qqq_chart  = build_qqq_chart(df_qqq, ath, target, qqq_manual)
+    tqqq_chart = build_tqqq_chart(df_tqqq, tqqq_manual)
 
     st.plotly_chart(qqq_chart,  use_container_width=True, key="qqq_chart")
     st.plotly_chart(tqqq_chart, use_container_width=True, key="tqqq_chart")
