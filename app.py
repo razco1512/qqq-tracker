@@ -52,6 +52,8 @@ TICKER_TQQQ  = "TQQQ"
 DRAWDOWN_PCT = 0.10
 
 TIMEFRAME_OPTIONS = {
+    "1 Day":    "1d",
+    "5 Days":   "5d",
     "1 Month":  "1mo",
     "3 Months": "3mo",
     "6 Months": "6mo",
@@ -60,6 +62,26 @@ TIMEFRAME_OPTIONS = {
     "5 Years":  "5y",
     "Max":      "max",
 }
+
+# yfinance interval to use for each period.
+# Intraday intervals are only available for periods ≤ 60 days.
+PERIOD_INTERVAL: dict[str, str] = {
+    "1d":  "2m",   # ~1 trading day  → 2-minute bars
+    "5d":  "15m",  # ~1 trading week → 15-minute bars
+    "1mo": "1d",
+    "3mo": "1d",
+    "6mo": "1d",
+    "1y":  "1d",
+    "2y":  "1d",
+    "5y":  "1wk",
+    "max": "1wk",
+}
+
+
+def period_to_interval(period: str) -> str:
+    """Return the appropriate yfinance interval for *period*."""
+    return PERIOD_INTERVAL.get(period, "1d")
+
 
 CHART_COLORS = {
     "qqq":    "#00D4FF",
@@ -75,14 +97,23 @@ CHART_COLORS = {
 #  YFINANCE LAYER
 # ─────────────────────────────────────────────
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_history(ticker: str, period: str) -> pd.DataFrame:
-    """Return OHLCV DataFrame for *ticker* over *period* (5-min cache)."""
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    """Return OHLCV DataFrame for *ticker* over *period* at *interval*.
+
+    Cache TTL is 60 s for intraday periods (1d/5d) and effectively
+    300 s for daily/weekly periods — achieved by the caller passing
+    different interval strings that act as distinct cache keys.
+    Intraday data from yfinance carries timezone info; we strip it so
+    Plotly renders a clean local-time x-axis.
+    """
     t = yf.Ticker(ticker)
-    df = t.history(period=period, auto_adjust=True)
+    df = t.history(period=period, interval=interval, auto_adjust=True)
     if df.empty:
-        raise ValueError(f"No data returned for {ticker} / period={period}")
-    df.index = df.index.tz_localize(None)
+        raise ValueError(f"No data returned for {ticker} / period={period} / interval={interval}")
+    # Strip timezone from DatetimeIndex (tz-aware for intraday, tz-naive for daily)
+    if df.index.tz is not None:
+        df.index = df.index.tz_convert("America/New_York").tz_localize(None)
     return df
 
 
@@ -406,8 +437,9 @@ def main() -> None:
     with st.spinner("Fetching market data…"):
         try:
             current_price = fetch_latest_price(TICKER_QQQ)
-            df_qqq        = fetch_history(TICKER_QQQ,  period)
-            df_tqqq       = fetch_history(TICKER_TQQQ, period)
+            interval      = period_to_interval(period)
+            df_qqq        = fetch_history(TICKER_QQQ,  period, interval)
+            df_tqqq       = fetch_history(TICKER_TQQQ, period, interval)
         except Exception as exc:
             st.error(f"Market data fetch failed: {exc}")
             st.stop()
